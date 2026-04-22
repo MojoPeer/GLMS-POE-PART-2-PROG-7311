@@ -94,6 +94,6 @@ namespace GLMS.Migrations
 
             migrationBuilder.DropTable(
                 name: "Clients");
-        }
+        }=
     }
 }
