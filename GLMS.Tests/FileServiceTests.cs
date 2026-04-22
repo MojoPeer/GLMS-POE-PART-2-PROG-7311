@@ -5,7 +5,6 @@
 using GLMS.Services;
 using Microsoft.AspNetCore.Http;
 using Moq;
-using System.IO;
 using Xunit;
 
 namespace GLMS.Tests
@@ -18,6 +17,7 @@ namespace GLMS.Tests
             // Arrange
             var fileMock = new Mock<IFormFile>();
             fileMock.Setup(f => f.FileName).Returns("test.pdf");
+            fileMock.Setup(f => f.Length).Returns(100);
 
             var service = new FileService();
 
@@ -34,6 +34,24 @@ namespace GLMS.Tests
             // Arrange
             var fileMock = new Mock<IFormFile>();
             fileMock.Setup(f => f.FileName).Returns("test.txt");
+            fileMock.Setup(f => f.Length).Returns(100);
+
+            var service = new FileService();
+
+            // Act
+            var result = service.IsValidPdf(fileMock.Object);
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsValidPdf_ReturnsFalseForEmptyFile()
+        {
+            // Arrange
+            var fileMock = new Mock<IFormFile>();
+            fileMock.Setup(f => f.FileName).Returns("test.pdf");
+            fileMock.Setup(f => f.Length).Returns(0);
 
             var service = new FileService();
 
