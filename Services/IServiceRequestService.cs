@@ -6,7 +6,7 @@ namespace GLMS.Services
 {
     public interface IServiceRequestService
     {
-        Task<List<ServiceRequest>> GetAllAsync();
+        Task<List<ServiceRequest>> GetAllAsync(); /*TEST*/
         Task<ServiceRequest> GetByIdAsync(int id);
         Task<bool> AddAsync(ServiceRequest request);
         Task UpdateAsync(ServiceRequest request);
