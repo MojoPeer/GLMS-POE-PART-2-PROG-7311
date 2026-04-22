@@ -1,0 +1,32 @@
+@model GLMS.Models.Contract
+
+<h2>Contract Details</h2>
+<div>
+    <strong>Client:</strong> @Model.Client?.Name
+</div>
+<div>
+    <strong>Service Level:</strong> @Model.ServiceLevel
+</div>
+<div>
+    <strong>Status:</strong> @Model.Status
+</div>
+<div>
+    <strong>Start:</strong> @Model.StartDate.ToShortDateString()
+</div>
+<div>
+    <strong>End:</strong> @Model.EndDate.ToShortDateString()
+</div>
+<div>
+    <strong>Signed Agreement:</strong>
+    @if(!string.IsNullOrEmpty(Model.SignedAgreementPath)) { <a href="@Model.SignedAgreementPath">Download</a> } else { <span>None</span> }
+</div>
+<div>
+    <h3>Service Requests</h3>
+    <ul>
+    @foreach(var r in Model.ServiceRequests)
+    {
+        <li>@r.Description - @r.Status - @r.Cost.ToString("C")</li>
+    }
+    </ul>
+</div>
+<p><a href="/Contracts">Back to list</a></p>

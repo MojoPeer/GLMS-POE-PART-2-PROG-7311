@@ -1,0 +1,25 @@
+@model IEnumerable<GLMS.Models.ServiceRequest>
+
+<h2>Service Requests</h2>
+<p><a href="/ServiceRequests/Create">Create New</a></p>
+<table>
+    <thead>
+        <tr><th>Contract</th><th>Description</th><th>Cost (ZAR)</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    @foreach(var r in Model)
+    {
+        <tr>
+            <td>@r.Contract?.ServiceLevel (@r.Contract?.Client?.Name)</td>
+            <td>@r.Description</td>
+            <td>@r.Cost.ToString("N2")</td>
+            <td>@r.Status</td>
+            <td>
+                <a href="/ServiceRequests/Details/@r.Id">Details</a> |
+                <a href="/ServiceRequests/Edit/@r.Id">Edit</a> |
+                <a href="/ServiceRequests/Delete/@r.Id">Delete</a>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>

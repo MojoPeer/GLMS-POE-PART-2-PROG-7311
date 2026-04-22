@@ -1,0 +1,19 @@
+@model GLMS.Models.Client
+
+<h2>Edit Client</h2>
+<form asp-action="Edit" method="post">
+    <input type="hidden" asp-for="Id" />
+    <div>
+        <label asp-for="Name"></label>
+        <input asp-for="Name" />
+    </div>
+    <div>
+        <label asp-for="ContactDetails"></label>
+        <input asp-for="ContactDetails" />
+    </div>
+    <div>
+        <label asp-for="Region"></label>
+        <input asp-for="Region" />
+    </div>
+    <button type="submit">Save</button>
+</form>

@@ -1,0 +1,98 @@
+@model GLMS.Models.ServiceRequest
+
+@{
+    ViewData["Title"] = "Create Service Request";
+}
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h3 class="mb-0">Create Service Request</h3>
+        </div>
+        <div class="card-body">
+            <form asp-action="Create" method="post">
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="mb-3">
+                    <label class="form-label">Contract</label>
+                    <select asp-for="ContractId" class="form-select" asp-items="ViewBag.Contracts">
+                        <option value="">-- Select Contract --</option>
+                    </select>
+                    <span asp-validation-for="ContractId" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Description" class="form-label"></label>
+                    <input asp-for="Description" class="form-control" />
+                    <span asp-validation-for="Description" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Amount (USD)</label>
+                    <input name="usdAmount" id="usdAmount" class="form-control" type="number" step="0.01" min="0" />
+                    <small class="text-muted">Enter an amount in USD to convert it live to ZAR.</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Converted Amount (ZAR)</label>
+                    <input id="zarDisplay" class="form-control" readonly />
+                    <small id="conversionMessage" class="text-muted"></small>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Status" class="form-label"></label>
+                    <select asp-for="Status" class="form-select">
+                        <option value="">-- Select Status --</option>
+                        <option>Pending</option>
+                        <option>Completed</option>
+                    </select>
+                    <span asp-validation-for="Status" class="text-danger"></span>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-success">Create Service Request</button>
+                    <a asp-action="Index" class="btn btn-secondary">Back to List</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+
+    <script>
+        document.getElementById("usdAmount").addEventListener("input", async function () {
+            const usdValue = this.value;
+            const zarDisplay = document.getElementById("zarDisplay");
+            const message = document.getElementById("conversionMessage");
+
+            if (!usdValue || usdValue <= 0) {
+                zarDisplay.value = "";
+                message.textContent = "";
+                return;
+            }
+
+            try {
+                const response = await fetch(`/ServiceRequests/GetZarAmount?usdAmount=${usdValue}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    zarDisplay.value = Number(data.zarAmount).toFixed(2);
+                    message.textContent = "Live conversion successful.";
+                    message.className = "text-success";
+                } else {
+                    zarDisplay.value = "";
+                    message.textContent = data.message;
+                    message.className = "text-danger";
+                }
+            } catch {
+                zarDisplay.value = "";
+                message.textContent = "Could not connect to currency service.";
+                message.className = "text-danger";
+            }
+        });
+    </script>
+}

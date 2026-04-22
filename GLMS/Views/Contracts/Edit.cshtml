@@ -1,0 +1,32 @@
+@model GLMS.Models.Contract
+
+<h2>Edit Contract</h2>
+<form asp-action="Edit" method="post" enctype="multipart/form-data">
+    <input type="hidden" asp-for="Id" />
+    <div>
+        <label>Client</label>
+        <select asp-for="ClientId" asp-items="@(new Microsoft.AspNetCore.Mvc.Rendering.SelectList(ViewBag.Clients, "Id", "Name"))"></select>
+    </div>
+    <div>
+        <label asp-for="ServiceLevel"></label>
+        <input asp-for="ServiceLevel" />
+    </div>
+    <div>
+        <label asp-for="Status"></label>
+        <input asp-for="Status" />
+    </div>
+    <div>
+        <label asp-for="StartDate"></label>
+        <input asp-for="StartDate" type="date" />
+    </div>
+    <div>
+        <label asp-for="EndDate"></label>
+        <input asp-for="EndDate" type="date" />
+    </div>
+    <div>
+        <label>Signed Agreement (PDF)</label>
+        <input type="file" name="signedAgreement" />
+        @if(!string.IsNullOrEmpty(Model.SignedAgreementPath)) { <p>Current: <a href="@Model.SignedAgreementPath">Download</a></p> }
+    </div>
+    <button type="submit">Save</button>
+</form>

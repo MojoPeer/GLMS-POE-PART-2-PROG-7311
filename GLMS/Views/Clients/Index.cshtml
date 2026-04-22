@@ -1,0 +1,23 @@
+@model IEnumerable<GLMS.Models.Client>
+
+<h2>Clients</h2>
+<p><a href="/Clients/Create">Create New</a></p>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Region</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    @foreach(var c in Model)
+    {
+        <tr>
+            <td>@c.Name</td>
+            <td>@c.Region</td>
+            <td>
+                <a href="/Clients/Details/@c.Id">Details</a> |
+                <a href="/Clients/Edit/@c.Id">Edit</a> |
+                <a href="/Clients/Delete/@c.Id">Delete</a>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>

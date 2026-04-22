@@ -1,0 +1,11 @@
+@model GLMS.Models.Contract
+
+<h2>Delete Contract</h2>
+<div>
+    <p>Are you sure you want to delete contract for @Model.Client?.Name ?</p>
+</div>
+<form asp-action="Delete" method="post">
+    <input type="hidden" asp-for="Id" />
+    <button type="submit">Delete</button>
+    <a href="/Contracts">Cancel</a>
+</form>

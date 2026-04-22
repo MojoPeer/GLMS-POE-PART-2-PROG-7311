@@ -1,0 +1,16 @@
+@model GLMS.Models.ServiceRequest
+
+<h2>Service Request Details</h2>
+<div>
+    <strong>Contract:</strong> @Model.Contract?.ServiceLevel (@Model.Contract?.Client?.Name)
+</div>
+<div>
+    <strong>Description:</strong> @Model.Description
+</div>
+<div>
+    <strong>Cost (ZAR):</strong> @Model.Cost.ToString("N2")
+</div>
+<div>
+    <strong>Status:</strong> @Model.Status
+</div>
+<p><a href="/ServiceRequests">Back to list</a></p>

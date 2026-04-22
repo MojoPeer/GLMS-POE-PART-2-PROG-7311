@@ -1,0 +1,23 @@
+@model GLMS.Models.ServiceRequest
+
+<h2>Edit Service Request</h2>
+<form asp-action="Edit" method="post">
+    <input type="hidden" asp-for="Id" />
+    <div>
+        <label>Contract</label>
+        <select asp-for="ContractId" asp-items="@(new Microsoft.AspNetCore.Mvc.Rendering.SelectList(ViewBag.Contracts, "Id", "ServiceLevel"))"></select>
+    </div>
+    <div>
+        <label asp-for="Description"></label>
+        <input asp-for="Description" />
+    </div>
+    <div>
+        <label asp-for="Cost"></label>
+        <input asp-for="Cost" />
+    </div>
+    <div>
+        <label asp-for="Status"></label>
+        <input asp-for="Status" />
+    </div>
+    <button type="submit">Save</button>
+</form>

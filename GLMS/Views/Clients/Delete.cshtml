@@ -1,0 +1,11 @@
+@model GLMS.Models.Client
+
+<h2>Delete Client</h2>
+<div>
+    <p>Are you sure you want to delete @Model.Name ?</p>
+</div>
+<form asp-action="Delete" method="post">
+    <input type="hidden" asp-for="Id" />
+    <button type="submit">Delete</button>
+    <a href="/Clients">Cancel</a>
+</form>
