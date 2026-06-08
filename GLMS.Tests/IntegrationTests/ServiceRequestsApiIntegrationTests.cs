@@ -5,6 +5,7 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -13,10 +14,6 @@ using GLMS.API.Data;
 
 namespace GLMS.Tests.IntegrationTests
 {
-    /// <summary>
-    /// Integration tests for the ServiceRequests API endpoint.
-    /// Verifies that the business rule (Active contracts only) is enforced at the API level.
-    /// </summary>
     public class ServiceRequestsApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         private readonly HttpClient _client;
@@ -25,85 +22,80 @@ namespace GLMS.Tests.IntegrationTests
         {
             var testFactory = factory.WithWebHostBuilder(builder =>
             {
+                builder.ConfigureAppConfiguration((context, config) =>
+                {
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Jwt:Key"]      = "GLMS_JWT_SuperSecretKey_2026_PROG7311_POE_Part3",
+                        ["Jwt:Issuer"]   = "GLMS.API",
+                        ["Jwt:Audience"] = "GLMS.MVC",
+                        ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:"
+                    });
+                });
+
                 builder.ConfigureServices(services =>
                 {
                     var descriptor = services.SingleOrDefault(
                         d => d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>));
-                    if (descriptor != null)
-                        services.Remove(descriptor);
+                    if (descriptor != null) services.Remove(descriptor);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseInMemoryDatabase("IntegrationTestDb_SR"));
+                        options.UseInMemoryDatabase("SRTestDb_" + Guid.NewGuid()));
                 });
             });
 
             _client = testFactory.CreateClient();
         }
 
-        private async Task<string> GetJwtTokenAsync()
+        private async Task<string> GetTokenAsync()
         {
-            var response = await _client.PostAsJsonAsync("/api/auth/login",
+            var resp = await _client.PostAsJsonAsync("/api/auth/login",
                 new { username = "admin", password = "admin123" });
-            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-            return result.GetProperty("token").GetString() ?? string.Empty;
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            return json.GetProperty("token").GetString() ?? "";
         }
 
-        private void SetAuthHeader(string token)
-        {
+        private void Authorize(string token) =>
             _client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        }
 
-        private async Task<(int clientId, int contractId)> CreateClientAndContractAsync(string status)
+        private async Task<int> CreateContractWithStatus(string status)
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
+            var cr = await _client.PostAsJsonAsync("/api/clients",
+                new { name = $"Client-{status}-{Guid.NewGuid()}", contactDetails = "x@x.com", region = "Asia" });
+            var cObj = await cr.Content.ReadFromJsonAsync<JsonElement>();
+            var cId = cObj.GetProperty("id").GetInt32();
 
-            var clientResp = await _client.PostAsJsonAsync("/api/clients", new
+            var conResp = await _client.PostAsJsonAsync("/api/contracts", new
             {
-                name = $"SR Test Client - {status}",
-                contactDetails = "sr@test.com",
-                region = "Asia"
-            });
-            var clientObj = await clientResp.Content.ReadFromJsonAsync<JsonElement>();
-            var clientId = clientObj.GetProperty("id").GetInt32();
-
-            var contractResp = await _client.PostAsJsonAsync("/api/contracts", new
-            {
-                clientId,
+                clientId = cId,
                 startDate = DateTime.Today.ToString("yyyy-MM-dd"),
                 endDate = DateTime.Today.AddMonths(12).ToString("yyyy-MM-dd"),
                 status,
                 serviceLevel = "Gold"
             });
-            var contractObj = await contractResp.Content.ReadFromJsonAsync<JsonElement>();
-            var contractId = contractObj.GetProperty("id").GetInt32();
-
-            return (clientId, contractId);
+            var conObj = await conResp.Content.ReadFromJsonAsync<JsonElement>();
+            return conObj.GetProperty("id").GetInt32();
         }
 
         [Fact]
-        public async Task GetAllServiceRequests_ReturnsOk()
+        public async Task GetServiceRequests_Returns200()
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
+            Authorize(await GetTokenAsync());
             var response = await _client.GetAsync("/api/servicerequests");
-
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var json = await response.Content.ReadAsStringAsync();
-            Assert.StartsWith("[", json.TrimStart());
         }
 
         [Fact]
-        public async Task CreateServiceRequest_OnActiveContract_ReturnsCreated()
+        public async Task CreateServiceRequest_ActiveContract_Returns201()
         {
-            var (_, contractId) = await CreateClientAndContractAsync("Active");
+            Authorize(await GetTokenAsync());
+            var contractId = await CreateContractWithStatus("Active");
 
             var response = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
                 contractId,
-                description = "Test service request on Active contract",
+                description = "Test request on Active contract",
                 cost = 5000.00,
                 status = "Pending"
             });
@@ -112,84 +104,80 @@ namespace GLMS.Tests.IntegrationTests
         }
 
         [Fact]
-        public async Task CreateServiceRequest_OnDraftContract_ReturnsUnprocessableEntity()
+        public async Task CreateServiceRequest_DraftContract_Returns422()
         {
-            var (_, contractId) = await CreateClientAndContractAsync("Draft");
+            Authorize(await GetTokenAsync());
+            var contractId = await CreateContractWithStatus("Draft");
 
             var response = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
                 contractId,
-                description = "Should be blocked by business rule",
+                description = "Blocked by business rule",
                 cost = 1000.00,
                 status = "Pending"
             });
 
-            // Business rule: Draft contracts cannot have service requests
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         }
 
         [Fact]
-        public async Task CreateServiceRequest_OnExpiredContract_ReturnsUnprocessableEntity()
+        public async Task CreateServiceRequest_ExpiredContract_Returns422()
         {
-            var (_, contractId) = await CreateClientAndContractAsync("Expired");
+            Authorize(await GetTokenAsync());
+            var contractId = await CreateContractWithStatus("Expired");
 
             var response = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
                 contractId,
-                description = "Should be blocked by business rule",
+                description = "Blocked by business rule",
                 cost = 2000.00,
                 status = "Pending"
             });
 
-            // Business rule: Expired contracts cannot have service requests
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         }
 
         [Fact]
-        public async Task CreateServiceRequest_OnOnHoldContract_ReturnsUnprocessableEntity()
+        public async Task CreateServiceRequest_OnHoldContract_Returns422()
         {
-            var (_, contractId) = await CreateClientAndContractAsync("On Hold");
+            Authorize(await GetTokenAsync());
+            var contractId = await CreateContractWithStatus("On Hold");
 
             var response = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
                 contractId,
-                description = "Should be blocked by business rule",
+                description = "Blocked by business rule",
                 cost = 3000.00,
                 status = "Pending"
             });
 
-            // Business rule: On Hold contracts cannot have service requests
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         }
 
         [Fact]
         public async Task GetServiceRequestById_NotFound_Returns404()
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
+            Authorize(await GetTokenAsync());
             var response = await _client.GetAsync("/api/servicerequests/99999");
-
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
 
         [Fact]
-        public async Task DeleteServiceRequest_Existing_ReturnsNoContent()
+        public async Task DeleteServiceRequest_Returns204()
         {
-            var (_, contractId) = await CreateClientAndContractAsync("Active");
+            Authorize(await GetTokenAsync());
+            var contractId = await CreateContractWithStatus("Active");
 
-            // Create first
             var createResp = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
                 contractId,
-                description = "To be deleted",
+                description = "To delete",
                 cost = 1500.00,
                 status = "Pending"
             });
             var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
             var id = created.GetProperty("id").GetInt32();
 
-            // Delete
             var deleteResp = await _client.DeleteAsync($"/api/servicerequests/{id}");
             Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
         }

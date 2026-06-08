@@ -5,6 +5,7 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -13,85 +14,73 @@ using GLMS.API.Data;
 
 namespace GLMS.Tests.IntegrationTests
 {
-    /// <summary>
-    /// Integration tests that spin up the GLMS API in-process using WebApplicationFactory.
-    /// These tests call live API endpoints and assert the HTTP responses.
-    /// This is critical in a CI/CD pipeline to prevent breaking changes from reaching production.
-    /// </summary>
     public class ContractsApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         private readonly HttpClient _client;
-        private readonly WebApplicationFactory<Program> _factory;
 
         public ContractsApiIntegrationTests(WebApplicationFactory<Program> factory)
         {
-            // Override the database with an in-memory database for testing
-            _factory = factory.WithWebHostBuilder(builder =>
+            var testFactory = factory.WithWebHostBuilder(builder =>
             {
+                builder.ConfigureAppConfiguration((context, config) =>
+                {
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Jwt:Key"]      = "GLMS_JWT_SuperSecretKey_2026_PROG7311_POE_Part3",
+                        ["Jwt:Issuer"]   = "GLMS.API",
+                        ["Jwt:Audience"] = "GLMS.MVC",
+                        ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:"
+                    });
+                });
+
                 builder.ConfigureServices(services =>
                 {
-                    // Remove the real SQL Server registration
                     var descriptor = services.SingleOrDefault(
                         d => d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>));
-                    if (descriptor != null)
-                        services.Remove(descriptor);
+                    if (descriptor != null) services.Remove(descriptor);
 
-                    // Use in-memory database for fast, isolated tests
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseInMemoryDatabase("IntegrationTestDb_Contracts"));
+                        options.UseInMemoryDatabase("ContractsTestDb_" + Guid.NewGuid()));
                 });
             });
 
-            _client = _factory.CreateClient();
+            _client = testFactory.CreateClient();
         }
 
-        private async Task<string> GetJwtTokenAsync()
+        private async Task<string> GetTokenAsync()
         {
-            var response = await _client.PostAsJsonAsync("/api/auth/login", new
-            {
-                username = "admin",
-                password = "admin123"
-            });
-            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-            return result.GetProperty("token").GetString() ?? string.Empty;
+            var resp = await _client.PostAsJsonAsync("/api/auth/login",
+                new { username = "admin", password = "admin123" });
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            return json.GetProperty("token").GetString() ?? "";
         }
 
-        private void SetAuthHeader(string token)
-        {
+        private void Authorize(string token) =>
             _client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        }
 
         [Fact]
-        public async Task Login_WithValidCredentials_ReturnsOkWithToken()
+        public async Task Login_ValidCredentials_Returns200WithToken()
         {
-            var response = await _client.PostAsJsonAsync("/api/auth/login", new
-            {
-                username = "admin",
-                password = "admin123"
-            });
+            var response = await _client.PostAsJsonAsync("/api/auth/login",
+                new { username = "admin", password = "admin123" });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-            var json = await response.Content.ReadAsStringAsync();
-            Assert.Contains("token", json);
-            Assert.NotEmpty(json);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("token", body);
         }
 
         [Fact]
-        public async Task Login_WithInvalidCredentials_ReturnsUnauthorized()
+        public async Task Login_InvalidCredentials_Returns401()
         {
-            var response = await _client.PostAsJsonAsync("/api/auth/login", new
-            {
-                username = "wrong",
-                password = "wrongpassword"
-            });
+            var response = await _client.PostAsJsonAsync("/api/auth/login",
+                new { username = "wrong", password = "wrong" });
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
         [Fact]
-        public async Task GetAllContracts_WithoutToken_ReturnsUnauthorized()
+        public async Task GetContracts_NoToken_Returns401()
         {
             _client.DefaultRequestHeaders.Authorization = null;
             var response = await _client.GetAsync("/api/contracts");
@@ -99,94 +88,31 @@ namespace GLMS.Tests.IntegrationTests
         }
 
         [Fact]
-        public async Task GetAllContracts_WithValidToken_ReturnsOkWithJsonArray()
+        public async Task GetContracts_WithToken_Returns200()
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
+            Authorize(await GetTokenAsync());
             var response = await _client.GetAsync("/api/contracts");
-
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-            var json = await response.Content.ReadAsStringAsync();
-            Assert.NotNull(json);
-            // Response should be a JSON array
-            Assert.StartsWith("[", json.TrimStart());
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.StartsWith("[", body.TrimStart());
         }
 
         [Fact]
-        public async Task CreateContract_WithValidData_ReturnsCreated()
+        public async Task GetContractById_NotFound_Returns404()
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
-            // First create a client to satisfy the FK
-            var clientResponse = await _client.PostAsJsonAsync("/api/clients", new
-            {
-                name = "Test Client",
-                contactDetails = "test@test.com",
-                region = "Africa"
-            });
-            Assert.Equal(HttpStatusCode.Created, clientResponse.StatusCode);
-            var client = await clientResponse.Content.ReadFromJsonAsync<JsonElement>();
-            var clientId = client.GetProperty("id").GetInt32();
-
-            var contractResponse = await _client.PostAsJsonAsync("/api/contracts", new
-            {
-                clientId = clientId,
-                startDate = DateTime.Today.ToString("yyyy-MM-dd"),
-                endDate = DateTime.Today.AddMonths(12).ToString("yyyy-MM-dd"),
-                status = "Active",
-                serviceLevel = "Gold"
-            });
-
-            Assert.Equal(HttpStatusCode.Created, contractResponse.StatusCode);
-        }
-
-        [Fact]
-        public async Task GetContractById_WithNonExistentId_ReturnsNotFound()
-        {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
+            Authorize(await GetTokenAsync());
             var response = await _client.GetAsync("/api/contracts/99999");
-
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
 
         [Fact]
-        public async Task FilterContracts_ByStatus_ReturnsFilteredList()
+        public async Task CreateContract_ValidData_Returns201()
         {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
+            Authorize(await GetTokenAsync());
 
-            var response = await _client.GetAsync("/api/contracts?status=Active");
-
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-            var contracts = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
-            Assert.NotNull(contracts);
-            // All returned contracts should have status Active
-            foreach (var contract in contracts)
-            {
-                var status = contract.GetProperty("status").GetString();
-                Assert.Equal("Active", status);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateContractStatus_WithPatch_ReturnsNoContent()
-        {
-            var token = await GetJwtTokenAsync();
-            SetAuthHeader(token);
-
-            // Create client and contract first
-            var clientResp = await _client.PostAsJsonAsync("/api/clients", new
-            {
-                name = "Patch Test Client",
-                contactDetails = "patch@test.com",
-                region = "Europe"
-            });
+            var clientResp = await _client.PostAsJsonAsync("/api/clients",
+                new { name = "Test Client", contactDetails = "t@t.com", region = "Africa" });
+            Assert.Equal(HttpStatusCode.Created, clientResp.StatusCode);
             var clientObj = await clientResp.Content.ReadFromJsonAsync<JsonElement>();
             var clientId = clientObj.GetProperty("id").GetInt32();
 
@@ -194,18 +120,65 @@ namespace GLMS.Tests.IntegrationTests
             {
                 clientId,
                 startDate = DateTime.Today.ToString("yyyy-MM-dd"),
+                endDate = DateTime.Today.AddMonths(12).ToString("yyyy-MM-dd"),
+                status = "Active",
+                serviceLevel = "Gold"
+            });
+
+            Assert.Equal(HttpStatusCode.Created, contractResp.StatusCode);
+        }
+
+        [Fact]
+        public async Task FilterContracts_ByStatus_ReturnsMatchingOnly()
+        {
+            Authorize(await GetTokenAsync());
+
+            // Create a client and Active contract
+            var cr = await _client.PostAsJsonAsync("/api/clients",
+                new { name = "Filter Client", contactDetails = "f@f.com", region = "Asia" });
+            var cObj = await cr.Content.ReadFromJsonAsync<JsonElement>();
+            var cId = cObj.GetProperty("id").GetInt32();
+
+            await _client.PostAsJsonAsync("/api/contracts", new
+            {
+                clientId = cId,
+                startDate = DateTime.Today.ToString("yyyy-MM-dd"),
                 endDate = DateTime.Today.AddMonths(6).ToString("yyyy-MM-dd"),
-                status = "Draft",
+                status = "Active",
                 serviceLevel = "Silver"
             });
-            var contract = await contractResp.Content.ReadFromJsonAsync<JsonElement>();
-            var contractId = contract.GetProperty("id").GetInt32();
 
-            // Patch the status
-            var patchResponse = await _client.PatchAsJsonAsync($"/api/contracts/{contractId}/status",
+            var response = await _client.GetAsync("/api/contracts?status=Active");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var contracts = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
+            Assert.NotNull(contracts);
+            Assert.All(contracts, c => Assert.Equal("Active", c.GetProperty("status").GetString()));
+        }
+
+        [Fact]
+        public async Task PatchContractStatus_Returns204()
+        {
+            Authorize(await GetTokenAsync());
+
+            var cr = await _client.PostAsJsonAsync("/api/clients",
+                new { name = "Patch Client", contactDetails = "p@p.com", region = "Europe" });
+            var cObj = await cr.Content.ReadFromJsonAsync<JsonElement>();
+            var cId = cObj.GetProperty("id").GetInt32();
+
+            var conResp = await _client.PostAsJsonAsync("/api/contracts", new
+            {
+                clientId = cId,
+                startDate = DateTime.Today.ToString("yyyy-MM-dd"),
+                endDate = DateTime.Today.AddMonths(6).ToString("yyyy-MM-dd"),
+                status = "Draft",
+                serviceLevel = "Bronze"
+            });
+            var conObj = await conResp.Content.ReadFromJsonAsync<JsonElement>();
+            var conId = conObj.GetProperty("id").GetInt32();
+
+            var patch = await _client.PatchAsJsonAsync($"/api/contracts/{conId}/status",
                 new { status = "Active" });
-
-            Assert.Equal(HttpStatusCode.NoContent, patchResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, patch.StatusCode);
         }
     }
 }

@@ -10,8 +10,11 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    env:
+      ASPNETCORE_ENVIRONMENT: Development
+
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Setup .NET 8
@@ -19,11 +22,11 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    - name: Restore dependencies
-      run: dotnet restore GLMS.sln
+    - name: Restore
+      run: dotnet restore GLMS.Tests/GLMS.Tests.csproj
 
-    - name: Build solution
-      run: dotnet build GLMS.sln --no-restore --configuration Release
+    - name: Build
+      run: dotnet build GLMS.Tests/GLMS.Tests.csproj --configuration Release --no-restore
 
-    - name: Run all tests
+    - name: Test
       run: dotnet test GLMS.Tests/GLMS.Tests.csproj --configuration Release --no-build --verbosity normal
