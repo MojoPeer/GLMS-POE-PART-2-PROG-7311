@@ -1,4 +1,4 @@
-name: .NET Build and Test (Unit + Integration)
+name: GLMS Build and Test
 
 on:
   push:
@@ -20,13 +20,10 @@ jobs:
         dotnet-version: 8.0.x
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore GLMS.sln
 
-    - name: Build all projects
-      run: dotnet build --no-restore --configuration Release
+    - name: Build solution
+      run: dotnet build GLMS.sln --no-restore --configuration Release
 
-    - name: Run unit tests
-      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName~ServiceRequestAppServiceTests|FullyQualifiedName~CurrencyServiceTests|FullyQualifiedName~FileServiceTests" --logger "console;verbosity=normal"
-
-    - name: Run integration tests (in-process API with in-memory DB)
-      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName~IntegrationTests" --logger "console;verbosity=normal"
+    - name: Run all tests
+      run: dotnet test GLMS.Tests/GLMS.Tests.csproj --configuration Release --no-build --verbosity normal
