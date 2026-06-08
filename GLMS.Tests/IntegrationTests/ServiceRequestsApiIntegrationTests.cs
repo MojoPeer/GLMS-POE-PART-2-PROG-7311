@@ -14,22 +14,25 @@ using GLMS.API.Data;
 
 namespace GLMS.Tests.IntegrationTests
 {
-    public class ServiceRequestsApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+    // Fresh factory + isolated InMemory DB per test (no shared state issues)
+    public class ServiceRequestsApiIntegrationTests : IDisposable
     {
+        private readonly WebApplicationFactory<Program> _factory;
         private readonly HttpClient _client;
 
-        public ServiceRequestsApiIntegrationTests(WebApplicationFactory<Program> factory)
+        public ServiceRequestsApiIntegrationTests()
         {
-            var testFactory = factory.WithWebHostBuilder(builder =>
+            var dbName = "SRDb_" + Guid.NewGuid();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                builder.ConfigureAppConfiguration((context, config) =>
+                builder.ConfigureAppConfiguration((_, config) =>
                 {
                     config.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["Jwt:Key"]      = "GLMS_JWT_SuperSecretKey_2026_PROG7311_POE_Part3",
                         ["Jwt:Issuer"]   = "GLMS.API",
-                        ["Jwt:Audience"] = "GLMS.MVC",
-                        ["ConnectionStrings:DefaultConnection"] = "DataSource=:memory:"
+                        ["Jwt:Audience"] = "GLMS.MVC"
                     });
                 });
 
@@ -40,12 +43,14 @@ namespace GLMS.Tests.IntegrationTests
                     if (descriptor != null) services.Remove(descriptor);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseInMemoryDatabase("SRTestDb_" + Guid.NewGuid()));
+                        options.UseInMemoryDatabase(dbName));
                 });
             });
 
-            _client = testFactory.CreateClient();
+            _client = _factory.CreateClient();
         }
+
+        public void Dispose() => _factory.Dispose();
 
         private async Task<string> GetTokenAsync()
         {
@@ -59,24 +64,12 @@ namespace GLMS.Tests.IntegrationTests
             _client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-        private async Task<int> CreateContractWithStatus(string status)
-        {
-            var cr = await _client.PostAsJsonAsync("/api/clients",
-                new { name = $"Client-{status}-{Guid.NewGuid()}", contactDetails = "x@x.com", region = "Asia" });
-            var cObj = await cr.Content.ReadFromJsonAsync<JsonElement>();
-            var cId = cObj.GetProperty("id").GetInt32();
-
-            var conResp = await _client.PostAsJsonAsync("/api/contracts", new
-            {
-                clientId = cId,
-                startDate = DateTime.Today.ToString("yyyy-MM-dd"),
-                endDate = DateTime.Today.AddMonths(12).ToString("yyyy-MM-dd"),
-                status,
-                serviceLevel = "Gold"
-            });
-            var conObj = await conResp.Content.ReadFromJsonAsync<JsonElement>();
-            return conObj.GetProperty("id").GetInt32();
-        }
+        // ── Seeded contract IDs (from DbInitializer) ──────────────────────────
+        // Contract 1:  Active   (ClientId 1, Gold)
+        // Contract 2:  Expired  (ClientId 2, Silver)
+        // Contract 4:  On Hold  (ClientId 4, Bronze)
+        // Contract 5:  Draft    (ClientId 5, Gold)
+        // Service Requests 1-10 are seeded on contracts 1, 3, 6, 9
 
         [Fact]
         public async Task GetServiceRequests_Returns200()
@@ -84,74 +77,6 @@ namespace GLMS.Tests.IntegrationTests
             Authorize(await GetTokenAsync());
             var response = await _client.GetAsync("/api/servicerequests");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        }
-
-        [Fact]
-        public async Task CreateServiceRequest_ActiveContract_Returns201()
-        {
-            Authorize(await GetTokenAsync());
-            var contractId = await CreateContractWithStatus("Active");
-
-            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
-            {
-                contractId,
-                description = "Test request on Active contract",
-                cost = 5000.00,
-                status = "Pending"
-            });
-
-            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        }
-
-        [Fact]
-        public async Task CreateServiceRequest_DraftContract_Returns422()
-        {
-            Authorize(await GetTokenAsync());
-            var contractId = await CreateContractWithStatus("Draft");
-
-            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
-            {
-                contractId,
-                description = "Blocked by business rule",
-                cost = 1000.00,
-                status = "Pending"
-            });
-
-            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        }
-
-        [Fact]
-        public async Task CreateServiceRequest_ExpiredContract_Returns422()
-        {
-            Authorize(await GetTokenAsync());
-            var contractId = await CreateContractWithStatus("Expired");
-
-            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
-            {
-                contractId,
-                description = "Blocked by business rule",
-                cost = 2000.00,
-                status = "Pending"
-            });
-
-            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        }
-
-        [Fact]
-        public async Task CreateServiceRequest_OnHoldContract_Returns422()
-        {
-            Authorize(await GetTokenAsync());
-            var contractId = await CreateContractWithStatus("On Hold");
-
-            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
-            {
-                contractId,
-                description = "Blocked by business rule",
-                cost = 3000.00,
-                status = "Pending"
-            });
-
-            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         }
 
         [Fact]
@@ -163,18 +88,93 @@ namespace GLMS.Tests.IntegrationTests
         }
 
         [Fact]
+        public async Task GetServiceRequestById_SeededRequest_Returns200()
+        {
+            Authorize(await GetTokenAsync());
+            // Service request ID 1 is always seeded
+            var response = await _client.GetAsync("/api/servicerequests/1");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task CreateServiceRequest_ActiveContract_Returns201()
+        {
+            Authorize(await GetTokenAsync());
+            // Contract 1 is seeded with status "Active"
+            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
+            {
+                contractId = 1,
+                description = "Test service request on Active contract",
+                cost = 5000.00,
+                status = "Pending"
+            });
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task CreateServiceRequest_DraftContract_Returns422()
+        {
+            Authorize(await GetTokenAsync());
+            // Contract 5 is seeded with status "Draft"
+            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
+            {
+                contractId = 5,
+                description = "Blocked by Draft business rule",
+                cost = 1000.00,
+                status = "Pending"
+            });
+
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task CreateServiceRequest_ExpiredContract_Returns422()
+        {
+            Authorize(await GetTokenAsync());
+            // Contract 2 is seeded with status "Expired"
+            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
+            {
+                contractId = 2,
+                description = "Blocked by Expired business rule",
+                cost = 2000.00,
+                status = "Pending"
+            });
+
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task CreateServiceRequest_OnHoldContract_Returns422()
+        {
+            Authorize(await GetTokenAsync());
+            // Contract 4 is seeded with status "On Hold"
+            var response = await _client.PostAsJsonAsync("/api/servicerequests", new
+            {
+                contractId = 4,
+                description = "Blocked by On Hold business rule",
+                cost = 3000.00,
+                status = "Pending"
+            });
+
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        }
+
+        [Fact]
         public async Task DeleteServiceRequest_Returns204()
         {
             Authorize(await GetTokenAsync());
-            var contractId = await CreateContractWithStatus("Active");
 
+            // Create a service request on seeded Active contract 1
             var createResp = await _client.PostAsJsonAsync("/api/servicerequests", new
             {
-                contractId,
-                description = "To delete",
+                contractId = 1,
+                description = "To be deleted",
                 cost = 1500.00,
                 status = "Pending"
             });
+            Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+
             var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
             var id = created.GetProperty("id").GetInt32();
 
