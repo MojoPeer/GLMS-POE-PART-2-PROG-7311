@@ -5,6 +5,7 @@
 using GLMS.AppServices;
 using GLMS.Models;
 using GLMS.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ using System.Linq;
 
 namespace GLMS.Controllers
 {
+    [Authorize]
     public class ServiceRequestsController : Controller
     {
         private readonly IServiceRequestAppService _serviceRequestService;

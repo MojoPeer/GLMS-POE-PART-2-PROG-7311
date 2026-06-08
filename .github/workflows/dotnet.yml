@@ -1,4 +1,4 @@
-name: .NET Build and Test
+name: .NET Build and Test (Unit + Integration)
 
 on:
   push:
@@ -22,8 +22,11 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
 
-    - name: Build
+    - name: Build all projects
       run: dotnet build --no-restore --configuration Release
 
-    - name: Test
-      run: dotnet test --no-build --configuration Release
+    - name: Run unit tests
+      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName~ServiceRequestAppServiceTests|FullyQualifiedName~CurrencyServiceTests|FullyQualifiedName~FileServiceTests" --logger "console;verbosity=normal"
+
+    - name: Run integration tests (in-process API with in-memory DB)
+      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName~IntegrationTests" --logger "console;verbosity=normal"

@@ -1,53 +1,79 @@
-using Microsoft.EntityFrameworkCore;
-using GLMS.Data;
+// Code attribution
+// OpenAI. 2026. ChatGPT (Version 5.3)
+// Used for guidance
+
+using GLMS.HttpServices;
 using GLMS.AppServices;
 using GLMS.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddControllersWithViews();
 
-// Register DbContext
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Session for storing JWT token received from the API
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(8);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
 
-// Register AppServices
-builder.Services.AddScoped<IClientAppService, ClientAppService>();
-builder.Services.AddScoped<IContractAppService, ContractAppService>();
-builder.Services.AddScoped<IServiceRequestAppService, ServiceRequestAppService>();
+// Cookie authentication for MVC pages
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Auth/Login";
+        options.LogoutPath = "/Auth/Logout";
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
 
-// Register FileService
-builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddAuthorization();
 
-// Register CurrencyService with HttpClient
+// IHttpContextAccessor so TokenHandler can read the JWT from session
+builder.Services.AddHttpContextAccessor();
+
+// TokenHandler attaches the JWT token to all outgoing API requests
+builder.Services.AddTransient<TokenHandler>();
+
+// The base URL of the GLMS Web API
+var apiBaseUrl = builder.Configuration["ApiSettings:BaseUrl"]!;
+
+// Named HttpClient for AuthController (no token needed for login)
+builder.Services.AddHttpClient("GlmsApi", c => c.BaseAddress = new Uri(apiBaseUrl));
+
+// Typed HttpClients for service layer — all go through TokenHandler
+builder.Services.AddHttpClient<IClientAppService, HttpClientAppService>(
+        c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<TokenHandler>();
+
+builder.Services.AddHttpClient<IContractAppService, HttpContractAppService>(
+        c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<TokenHandler>();
+
+builder.Services.AddHttpClient<IServiceRequestAppService, HttpServiceRequestAppService>(
+        c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<TokenHandler>();
+
+// CurrencyService and FileService stay in the MVC (no DB access needed)
 builder.Services.AddHttpClient<ICurrencyService, CurrencyService>();
+builder.Services.AddScoped<IFileService, FileService>();
 
 var app = builder.Build();
 
-// Seed database
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    DbInitializer.Seed(dbContext);
-}
-
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseRouting();
-
+app.UseSession();
+app.UseAuthentication();
 app.UseAuthorization();
 
-// Configure default MVC route
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");

@@ -5,6 +5,7 @@
 using GLMS.AppServices;
 using GLMS.Models;
 using GLMS.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using System;
 
 namespace GLMS.Controllers
 {
+    [Authorize]
     public class ContractsController : Controller
     {
         private readonly IContractAppService _contractService;

@@ -4,11 +4,13 @@
 
 using GLMS.AppServices;
 using GLMS.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 
 namespace GLMS.Controllers
 {
+    [Authorize]
     public class ClientsController : Controller
     {
         private readonly IClientAppService _service;
